@@ -1,0 +1,8 @@
+C:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\TotalHrReminderPreparer\bin\Debug\TotalHrReminderPreparer.exe.config
+C:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\TotalHrReminderPreparer\bin\Debug\TotalHrReminderPreparer.exe
+C:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\TotalHrReminderPreparer\bin\Debug\TotalHrReminderPreparer.pdb
+C:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\TotalHrReminderPreparer\obj\Debug\TotalHrReminderPreparer.ProjectInstaller.resources
+C:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\TotalHrReminderPreparer\obj\Debug\TotalHrReminderPreparer.csproj.GenerateResource.Cache
+C:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\TotalHrReminderPreparer\obj\Debug\TotalHrReminderPreparer.exe
+C:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\TotalHrReminderPreparer\obj\Debug\TotalHrReminderPreparer.pdb
+C:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\TotalHrReminderPreparer\obj\Debug\TotalHrReminderPreparer.csprojResolveAssemblyReference.cache

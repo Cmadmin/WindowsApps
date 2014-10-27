@@ -1,0 +1,5 @@
+26/10/2014 14:00:03 - EventProcessFailed: 1
+System.InvalidCastException: Object cannot be cast from DBNull to other types.
+   at System.DBNull.System.IConvertible.ToInt32(IFormatProvider provider)
+   at System.Convert.ToInt32(Object value)
+   at TotalHrReminderPreparer.ReminderProcessor.BuildCalEventReminderRecipientList(Int32 eventid, Int32 companyid, String RecipientListName, String description, Int32 CreatedBy) in c:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\TotalHrReminderPreparer\ReminderProcessor.cs:line 190
