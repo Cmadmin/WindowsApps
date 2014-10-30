@@ -1,0 +1,169 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Magicalia.MPS;
+using Magicalia.MPS.Modules.Forum;
+using Magicalia.MPS.Modules.Forum.Services;
+using Magicalia.MPS.Utilities.Text;
+
+namespace MadeForMums.forum
+{
+    public partial class forummessages : BasePage
+    {
+        public IForumThreadService ForumThreadService { get; set; }
+        public int Skip { get; set; }
+        public int Take { get; set; }
+        public string Sort { get; set; }
+        public ForumThreadMessageOrderBy Order { get; set; }
+        public int ThreadId { get; set; }
+        public string IsDisabled { get; set; }
+
+        public int[] MessageQuoteIds { get; set; }
+        public ThreadPageApplicationModel thread { get; set; }
+
+        protected List<PageData> PaginationData { get; set; }
+        protected int PageSize = 20;
+        protected int LastPostid { get; set; }
+
+        private ForumMessageData _messageData;
+        
+        protected override void OnPreInit(EventArgs e)
+        {
+            Take = PageSize;
+            Skip = 0;
+            Order = Request["order"] == "asc" || Request["order"] == null
+                        ? ForumThreadMessageOrderBy.DateAscending
+                        : ForumThreadMessageOrderBy.DateDescending;
+            int threadId;
+            int pageNum;
+            Int32.TryParse(Context.Request.QueryString["ThreadId"], out threadId);
+            Int32.TryParse(Context.Request.QueryString["forumMessagesPage"], out pageNum);
+            ThreadId = threadId;
+
+            _messageData = ForumThreadService.GetThreadData(threadId);//get thread data
+            LastPostid = _messageData.LastMessageId;
+
+            thread = ForumThreadService.GetThread(ThreadId, Skip, Take, Member, Order);
+
+            //wire api call here to get total number of posts and pages.
+
+            PaginationData = GetUrlsByPageNumber(pageNum, threadId);
+
+            AddOrUpdatePageParameter("OVERRIDE_ADMANAGER_CHANNEL", "chat");
+            AddOrUpdatePageParameter("OVERRIDE_ADMANAGER_CATEGORY", Text.AlphaNumericOnly(thread.AreaTitle));
+            AddOrUpdatePageParameter("SelectedChannelId", "2");
+            AddOrUpdatePageParameter("SiteTracker_Section", thread.TopicTitle);
+
+            PagePath = "/" + thread.TopicTitle + "/" + thread.ThreadTitle;
+
+            UpdatePageVariable("ForumMessageList", "ThreadView", "ForumTitle", thread.TopicTitle);
+            UpdatePageVariable("ForumMessageList", "ThreadView", "ThreadUrl", thread.ThreadUrl);
+            UpdatePageVariable("ForumMessageList", "ThreadView", "ThreadTitle", thread.ThreadTitle);
+            UpdatePageVariable("ForumMessageList", "ThreadView", "ThreadTitleTopicTitleSiteName",
+                               thread.ThreadTitle + " - " + thread.TopicTitle + " - " +
+                               Kernel.Instance.CurrentWebsite.ForumDisplayName);
+
+            AddOrUpdatePageParameter("CANONICAL_LINK", thread.ThreadUrl);
+
+            IsDisabled = Math.Min(Skip + Take, thread.NumberOfPosts) == thread.NumberOfPosts
+                             ? "load-more--disabled js-disabled"
+                             : "";
+            base.OnPreInit(e);
+
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            var quotes = ForumQuote.List(base.Member.MemberId);
+
+            MessageQuoteIds = quotes.Select(q => q.MessageId).ToArray();
+
+            base.OnLoad(e);
+        }
+
+        private List<PageData> GetAllPageUrls(int currentPageNumber, int threadId)
+        {
+            int messageCount = _messageData.MessageCount;//ForumThreadService.CountThreadMessages(threadId);
+            int pageCount = 1;
+
+            if (messageCount <= PageSize) return null;
+
+            pageCount = messageCount / PageSize;
+
+            var lstPageData = new List<PageData>();
+            currentPageNumber = (currentPageNumber == 0) ? 1 : currentPageNumber;
+
+            for (int i = 1; i <= pageCount; i++)
+            {
+                lstPageData.Add(new PageData
+                {
+                    PageNumber = i,
+                    Link = string.Format("/forum/thread.aspx?threadid={0}&pageNum={1}", threadId, i),
+                    Selected = (i == currentPageNumber)
+                });
+            }
+            return lstPageData;
+        }
+
+
+        public List<PageData> GetUrlsByPageNumber(int currentPage, int threadId)
+        {
+
+            // all data from threadid --
+            var totalData = GetAllPageUrls(currentPage, threadId);
+
+            if (totalData == null) return totalData;
+
+            //container for subset of data
+            var data = new List<PageData>();
+
+            var last = totalData.Last();
+
+            if (last.PageNumber != currentPage)
+            {
+                //prior 2 pages if they exist 
+                var prior = totalData.Where(x => x.PageNumber < currentPage).Reverse().Take(2).ToList();
+
+                //current page
+                var current = totalData.SingleOrDefault(x => x.Selected);
+
+                // next two to four pages if they exist
+
+                var take = 4 - prior.Count();
+                var after = totalData.Where(x => x.PageNumber > currentPage).Take(take).ToList();
+
+
+                //add the prior
+                data.AddRange(prior);
+
+                //add the current
+                data.Add(current);
+
+                //add the subsequent
+                data.AddRange(after);
+
+                var afterLast = after.Last();
+
+                if (afterLast.PageNumber != last.PageNumber) data.Add(last);
+            }
+            else
+            {
+                var prior = totalData.Where(x => x.PageNumber < currentPage).Reverse().Take(4).ToList();
+                var current = totalData.SingleOrDefault(x => x.PageNumber == currentPage);
+
+                data.AddRange(prior);
+                data.Add(current);
+            }
+
+            return data;
+        }
+    }
+
+    public class PageData
+    {
+        public int PageNumber { get; set; }
+        public string Link { get; set; }
+        public bool Selected { get; set; }
+    }
+
+}

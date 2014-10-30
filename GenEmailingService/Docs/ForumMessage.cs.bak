@@ -1,0 +1,919 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using System.Data;
+using System.Data.SqlClient;
+using System.Transactions;
+
+using Magicalia.MPS.DataModels.Forum;
+using Magicalia.MPS.Modules.Site.Bozo;
+using Magicalia.MPS.Modules.Site.SpamFilter;
+
+
+namespace Magicalia.MPS.Modules.Forum
+{
+    using Infrastructure;
+
+    using Member = Member.Member;
+
+    public enum ForumMessageOrderBy
+    {
+        Date = 1
+    }
+
+    public class ForumMessageData
+    {
+        public int MessageCount { get; set; }
+        public int LastMessageId { get; set; }
+    }
+
+    public class ForumMessage : BaseForumObject, IModuleObject
+    {
+        private ForumThread _forumThread;
+        private readonly DataModels.Forum.ForumMessage message;
+
+        #region DataContext Entity wrapper properties
+        /// <summary>
+        /// The id of the message
+        /// </summary>
+        public int MessageId
+        {
+            get { return message.MessageId; }
+            set { message.MessageId = value; }
+        }
+
+        /// <summary>
+        /// The id of the thread the message belongs to
+        /// </summary>
+        public int ThreadId
+        {
+            get { return message.ThreadId; }
+            set { message.ThreadId = value; }
+        }
+
+        /// <summary>
+        /// The id of the forum the message belongs to
+        /// </summary>
+        public int ForumId
+        {
+            get { return message.ForumId; }
+            set { message.ForumId = value; }
+        }
+
+        /// <summary>
+        /// The author's name
+        /// </summary>
+        public string Author
+        {
+            get { return message.Author; }
+            set { message.Author = value; }
+        }
+
+        /// <summary>
+        /// The author's member id
+        /// </summary>
+        public int MemberId
+        {
+            get { return message.MemberId; }
+            set { message.MemberId = value; }
+        }
+
+        public int BozoLevel
+        {
+            get { return message.BozoLevel; }
+            set { message.BozoLevel = value; }
+        }
+
+        /// <summary>
+        /// The actual message posted
+        /// </summary>
+        public string Message
+        {
+            get { return message.Message; }
+            set { message.Message = value; }
+        }
+
+        public bool Notify
+        {
+            get { return message.Notify; }
+            set { message.Notify = value; }
+        }
+
+        /// <summary>
+        /// The date and time the message was posted
+        /// </summary>
+        public DateTime? DatePosted
+        {
+            get { return message.DatePosted; }
+            set { message.DatePosted = value; }
+        }
+
+        /// <summary>
+        /// The date and time the message was edited
+        /// </summary>
+        public DateTime? DateEdited
+        {
+            get { return message.DateEdited; }
+            set { message.DateEdited = value; }
+        }
+
+        public int LikeCount
+        {
+            get { return message.LikeCount; }
+            set { message.LikeCount = value; }
+        }
+        #endregion
+
+        public Member Member { get; set; }
+
+        public string ThreadTitle { get; set; }
+
+        public ForumThread ForumThread 
+        {
+            get
+            {
+                return this._forumThread ?? (this._forumThread = new ForumThread().Load(this.ThreadId));
+            }
+
+            set { this._forumThread = value; } 
+        }
+
+        /// <summary>
+        /// Default constructor
+        /// </summary>
+        public ForumMessage()
+            : base()
+        {
+            this.message = new DataModels.Forum.ForumMessage();
+        }
+
+        public ForumMessage(DataRow dr)
+            : base()
+        {
+            this.message = new DataModels.Forum.ForumMessage
+                               {
+                                   MessageId = (int)dr["UMN"],
+                                   Message = dr["Message"] as string,
+                                   Author = dr["Author"] as string,
+                                   ThreadId = (int)dr["UTN"],
+                                   ForumId = (int)dr["URN"],
+                                   DatePosted = dr["Dateposted"] as DateTime?,
+                                   MemberId = (int)dr["MN"]
+                               };
+            this.ThreadTitle = dr["ThreadTitle"].ToString();
+            this.message.LikeCount = (int)dr["LikeCount"];
+
+            var member = new Member() { MemberId = this.message.MemberId };
+            if (dr["AvatarLive"] != DBNull.Value)
+            {
+                member.IsAvatarLive = true;
+            }
+            member.Avatar = dr["Avatar"].ToString();
+            this.Member = member;
+        }
+
+        public ForumMessage(DataRow dr, Website website) : base()
+        {
+            this.message = new DataModels.Forum.ForumMessage
+                               {
+                                   MessageId = (int)dr["UMN"],
+                                   Message = dr["Message"] as string,
+                                   Author = dr["Author"] as string,
+                                   ThreadId = (int)dr["UTN"],
+                                   ForumId = (int)dr["URN"],
+                                   DatePosted = dr["Dateposted"] as DateTime?,
+                                   MemberId = (int)dr["MN"]
+                               };
+
+            this.ThreadTitle = dr["ThreadTitle"].ToString();
+            this.message.LikeCount = (int)dr["LikeCount"];
+
+            var member = new Member();
+            member.MemberId = this.message.MemberId;
+            if (dr["AvatarLive"] != DBNull.Value)
+            {
+                member.IsAvatarLive = true;
+            }
+            member.Avatar = dr["Avatar"].ToString();
+
+            this.Member = member;
+        }
+
+        /// <summary>
+        /// Constructs a forum message from the message id. If the messageId is 0, then a new message
+        /// will be created when the forum message is saved.
+        /// </summary>
+        /// <param name="messageId"></param>
+        public ForumMessage(int messageId) : base()
+        {
+            if (messageId > 0)
+            {
+                this.message = Db.Locator.GetContext<ForumDataContext>().ForumMessages.SingleOrDefault(f => f.MessageId == messageId);
+            }
+
+            if (this.message == null)
+                this.message = new DataModels.Forum.ForumMessage();
+        }
+
+        /// <summary>
+        /// Creates a new ForumMessage directly from the underlying linq entity
+        /// </summary>
+        /// <param name="website"></param>
+        /// <param name="message"></param>
+        internal ForumMessage(Website website, DataModels.Forum.ForumMessage message) : base()
+        {
+            this.message = message;
+        }
+
+        public static List<ForumMessage> List(int threadId, Member member, int skip, int take, out long totalRecords)
+        {
+            return List(threadId, skip, take, out totalRecords, false, member.MemberId, member.BozoLevel);
+        }
+
+        /// <summary>
+        /// Returns a list of forum messages
+        /// </summary>
+        /// <param name="website"></param>
+        /// <param name="threadId"></param>
+        /// <param name="member"></param>
+        /// <param name="skip"></param>
+        /// <param name="take"></param>
+        /// <param name="totalRecords"></param>
+        /// <param name="memberId"></param>
+        /// <returns></returns>
+        public static List<ForumMessage> List(int threadId, int skip, int take, out long totalRecords, bool orderByDateDescending, int memberId, int bozoLevel)
+        {
+            var messages = new List<ForumMessage>();
+            var db = Db.Locator.GetContext<ForumDataContext>();
+            long? totalRecordsFromDb = 0;
+            var page = 1;
+            if (skip > 0)
+            {
+                page += skip / take;
+            }
+
+            List<ForumMessageResult> messagesFromDb = null;
+
+            if (orderByDateDescending)
+            {
+                if (memberId > 0 && bozoLevel > 0)
+                {
+                    messagesFromDb = db.GetForumMessagesForBozosLatestFirst(page, take, threadId, memberId, ref totalRecordsFromDb).ToList();
+                }
+                else if (memberId > 0 && bozoLevel == 0)
+                {
+                    messagesFromDb = db.GetForumMessagesForMembersLatestFirst(page, take, threadId, memberId, ref totalRecordsFromDb).ToList();
+                }
+                else
+                {
+                    messagesFromDb = db.GetForumMessagesNonMembersLatestFirst(page, take, threadId, memberId, ref totalRecordsFromDb).ToList();
+                }                
+            }
+            else
+            {
+                if (memberId > 0 && bozoLevel > 0)
+                {
+                    messagesFromDb = db.GetForumMessagesForBozos(page, take, threadId, memberId, ref totalRecordsFromDb).ToList();
+                }
+                else if (memberId > 0 && bozoLevel == 0)
+                {
+                    messagesFromDb = db.GetForumMessagesForMembers(page, take, threadId, memberId, ref totalRecordsFromDb).ToList();
+                }
+                else
+                {
+                    messagesFromDb = db.GetForumMessagesForNonMembers(page, take, threadId, memberId, ref totalRecordsFromDb).ToList();
+                }
+            }
+
+            foreach (var messageFromDb in messagesFromDb)
+            {
+                var message = new ForumMessage
+                                  {
+                                      MessageId = messageFromDb.MessageId,
+                                      Message = messageFromDb.Message,
+                                      Author = messageFromDb.Author,
+                                      ThreadId = threadId,
+                                      ForumId = messageFromDb.ForumId,
+                                      DatePosted = messageFromDb.DatePosted,
+                                      MemberId = messageFromDb.MemberId,
+                                      ThreadTitle = messageFromDb.ThreadTitle,
+                                      DateEdited = messageFromDb.DateEdited,
+                                      LikeCount = messageFromDb.LikeCount
+                                  };
+
+                var messageMember = new Member(true)
+                                        {
+                                            MemberId = messageFromDb.MemberId,
+                                            ShowMySignature =
+                                                messageFromDb.DisplayMemberSignature ?? false,
+                                            MemberSignature = messageFromDb.MemberSignature
+                                        };
+
+                if (!String.IsNullOrEmpty(messageFromDb.MemberAvatar))
+                    messageMember.IsAvatarLive = true;
+
+                messageMember.Avatar = messageFromDb.MemberAvatar;
+                messageMember.Nickname = messageFromDb.Author;
+                messageMember.ProfileUrl = messageFromDb.MemberProfileUrl;
+                messageMember.TotalForumPosts = messageFromDb.MemberStatsForumTotal ?? 0;
+                messageMember.TotalImages = messageFromDb.MemberStatsImageTotal ?? 0;
+                messageMember.TotalReviews = messageFromDb.MemberStatsReviewTotal ?? 0;
+                messageMember.TotalBookmarks = messageFromDb.MemberStatsBookmarkTotal ?? 0;
+                messageMember.TotalArticles = messageFromDb.MemberStatsArticleTotal ?? 0;
+                messageMember.TotalEventsEntered = messageFromDb.MemberStatsEventsEnteredTotal ?? 0;
+                messageMember.TotalEventsReviewed = messageFromDb.MemberStatsEventsReviewedTotal ?? 0;
+                messageMember.ShowMyStats = messageFromDb.DisplayMemberStats ?? false;
+                messageMember.MemberAwardsLeagueBalance = messageFromDb.MemberAwardLeagueBalance ?? 0;
+
+                message.Member = messageMember;
+                message.Member.SetupSubscriptionDetails();
+                
+                messages.Add(message);
+            }
+
+            totalRecords = totalRecordsFromDb.Value;
+
+            return messages;
+        }
+
+        public static void DeleteMemberMessages(int memberId)
+        {
+            using (var connection = Db.Locator.CreateConnection())
+            {
+                using (var command = new SqlCommand("dbo.ForumDeleteMemberMessages", connection))
+                {
+                    command.CommandType = CommandType.StoredProcedure;
+                    command.Parameters.AddWithValue("@MemberId", memberId);
+                    command.ExecuteNonQuery();
+                }
+            }
+        }
+
+        public static void UpdateForumMessageLikeCount(int messageId, int newLikeCount)
+        {
+            var message = Db.Locator.GetContext<ForumDataContext>().ForumMessages.SingleOrDefault(x => x.MessageId == messageId);
+            if (message == null)
+            {
+                return;
+            }
+            message.LikeCount = newLikeCount;
+            Db.Locator.GetContext<ForumDataContext>().SubmitChanges();
+        }
+
+        public static List<ForumMessage> List(Website website, int threadId, ForumMessageOrderBy orderBy, bool @ascending, int memberId, int skip, int take, out long total)
+        {
+            if (threadId == -1)
+            {
+                total = 0;
+                return new List<ForumMessage>();
+            }
+
+            var messages = new List<ForumMessage>();
+
+            using (var conn = Db.Locator.CreateConnection())
+            {
+                using (var db = new ForumDataContext(conn))
+                {
+                    using ( var tx = new TransactionScope( TransactionScopeOption.Required, new TransactionOptions { IsolationLevel = System.Transactions.IsolationLevel.ReadUncommitted }))
+                    {
+                        var messagesDb = (from m in db.ForumMessages
+                                          join t in db.ForumThreads on m.ThreadId equals t.ThreadId
+                                          join members in db.Members on m.MemberId equals members.MemberId
+                                          where m.BozoLevel == 0
+                                          orderby m.MessageId descending
+                                          select new { Thread = t, Message = m, Member = members });
+
+                        if (memberId > 0)
+                        {
+                            messagesDb = messagesDb.Where(x => x.Message.MemberId == memberId);
+                        }
+
+                        if (threadId > 0)
+                        {
+                            messagesDb = messagesDb.Where(x => x.Thread.ThreadId == threadId);
+                        }
+
+                        switch (orderBy)
+                        {
+                            case ForumMessageOrderBy.Date:
+                                messagesDb = @ascending
+                                                 ? messagesDb.OrderBy(x => x.Message.DatePosted)
+                                                 : messagesDb.OrderByDescending(x => x.Message.DatePosted);
+                                break;
+                        }
+
+                        total = messagesDb.Count();
+
+                        messages.AddRange( 
+                            messagesDb.Skip(skip)
+                            .Take(take)
+                            .Select(
+                                messageDb =>
+                                          new ForumMessage(website, messageDb.Message)
+                                              {
+                                                ForumThread = new ForumThread(messageDb.Thread),
+                                                Member = new Member
+                                                {
+                                                    MemberId = messageDb.Member.MemberId,
+                                                    Avatar = messageDb.Member.Avatar, 
+                                                    Nickname = messageDb.Member.Nickname
+                                                }
+                                }));
+                        tx.Complete();
+                    }
+                }
+            }
+
+            return messages;
+        }
+
+        public static List<ForumMessage> List(Website website, int memberId, int skip, int take, out long total)
+        {
+            return List(website, 0, ForumMessageOrderBy.Date, false, memberId, skip, take, out total);
+        }
+
+        public static int CountThreadMessages(int threadId)
+        {
+            int total = 0;
+
+            using (var conn = Db.Locator.CreateConnection())
+            {
+                using (var db = new ForumDataContext(conn))
+                {
+                    using (
+                        var tx = new TransactionScope(TransactionScopeOption.Required,
+                                                      new TransactionOptions
+                                                      {
+                                                          IsolationLevel =
+                                                              System.Transactions.IsolationLevel.ReadUncommitted
+                                                      }))
+                    {
+                        total = (from m in db.ForumMessages
+                                 join t in db.ForumThreads on m.ThreadId equals t.ThreadId
+                                 join members in db.Members on m.MemberId equals members.MemberId
+                                 where m.BozoLevel == 0 && t.ThreadId == threadId
+                                 select m).Count();
+
+                        tx.Complete();
+                    }
+                }
+            }
+            return total;
+        }
+
+        public static ForumMessageData ThreadMessageData(int threadId)
+        {
+            int total = 0;
+            int lastPostId = 0;
+
+            using (var conn = Db.Locator.CreateConnection())
+            {
+                using (var db = new ForumDataContext(conn))
+                {
+                    using (
+                        var tx = new TransactionScope(TransactionScopeOption.Required,
+                                                      new TransactionOptions
+                                                      {
+                                                          IsolationLevel =
+                                                              System.Transactions.IsolationLevel.ReadUncommitted
+                                                      }))
+                    {
+                        var allMessages = from m in db.ForumMessages
+                                 join t in db.ForumThreads on m.ThreadId equals t.ThreadId
+                                 join members in db.Members on m.MemberId equals members.MemberId
+                                 where m.BozoLevel == 0 && t.ThreadId == threadId
+                                 orderby m.MessageId
+                                 select m;
+
+                        lastPostId = allMessages.ToList().Last().MessageId;
+                        total = allMessages.Count();
+
+                        tx.Complete();
+                    }
+                }
+            }
+            return new ForumMessageData{ LastMessageId = lastPostId, MessageCount = total};
+        }
+
+        public static int GetForumMessageCountForUser(int memberId)
+        {
+            int total = 0;
+            using (var conn = Db.Locator.CreateConnection())
+            {
+                using (var db = new ForumDataContext(conn))
+                {
+                    using (var tx = new TransactionScope(TransactionScopeOption.Required, new TransactionOptions { IsolationLevel = System.Transactions.IsolationLevel.ReadUncommitted }))
+                    {
+                        var messagesDb = (from m in db.ForumMessages
+                                          join members in db.Members on m.MemberId equals members.MemberId
+                                          where m.BozoLevel == 0 && members.MemberId == memberId 
+                                          select new { Message = m, Member = members });
+
+                        total = messagesDb.Count();
+                        tx.Complete();
+                    }
+                }
+            }
+
+            return total;
+        }
+
+        public static ForumMessage GetFirstForumMessage(int threadId, int bozoLevel)
+        {
+            ForumMessage forumMessage = null;
+
+            var sb = new StringBuilder();
+            sb.AppendLine(String.Format("select top 1 * from ForumMessages with (nolock) where UTN = {0} and BozoLevel = {1} order by umn asc", threadId, bozoLevel));
+
+            using (var conn = Db.Locator.CreateConnection())
+            {
+                using (var sqlCommand = new SqlCommand(sb.ToString(), conn))
+                {
+                    using (var reader = sqlCommand.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            forumMessage = new ForumMessage
+                                               {
+                                                   MessageId = (int)reader["UMN"],
+                                                   ThreadId = threadId,
+                                                   Message = (string)reader["Message"],
+                                                   MemberId = (int)reader["MN"]
+                                               };
+                        }
+                    }
+                }
+            }
+            return forumMessage;
+        }
+
+
+        public static ForumMessage GetLastForumMessage(int threadId)
+        {
+            ForumMessage forumMessage = null;
+
+            var sb = new StringBuilder();
+            sb.AppendLine("select top 1 * from ForumMessages with (nolock) where UTN = " + threadId + " and BozoLevel = 0 order by umn desc");
+
+            using (var sqlCommand = new SqlCommand(sb.ToString(), Db.Locator.CreateConnection()))
+            {
+                using (var reader = sqlCommand.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        forumMessage = new ForumMessage();
+                        forumMessage.MessageId = (int)reader["UMN"];
+                        forumMessage.ThreadId = threadId;
+                        forumMessage.Message = (string)reader["Message"];
+                        forumMessage.MemberId = (int)reader["MN"];
+                    }
+                }
+            }
+            return forumMessage;
+        }
+
+
+
+        public static List<ForumMessage> ListByForumIds(Website website, List<int> forumIds, int skip, int take)
+        {
+            var messages = new List<ForumMessage>();
+            string forumIdsString = forumIds.Aggregate("", (current, forumId) => current + (forumId + ","));
+            forumIdsString = forumIdsString.Trim(',');
+            using (var conn = Db.Locator.CreateConnection())
+            {
+                using (var context = new ForumDataContext(conn))
+                {
+                    var messagesFromDb = context.GetForumMessagesByForumIds(forumIdsString, skip, take).ToList();
+
+                    foreach (var messageFromDb in messagesFromDb)
+                    {
+                        var message = new ForumMessage
+                                          {
+                                              MessageId = messageFromDb.MessageId,
+                                              Message = messageFromDb.Message,
+                                              Author = messageFromDb.Author,
+                                              ThreadId = messageFromDb.ThreadId,
+                                              ForumId = messageFromDb.ForumId,
+                                              DatePosted = messageFromDb.DatePosted
+                                          };
+
+                        var member = new Member() { Avatar = messageFromDb.MemberAvatar };
+                        message.Member = member;
+                        messages.Add(message);
+                    }
+                    return messages;
+                }
+            }
+        }
+
+      
+
+        private bool PerformSpamCheck(Member member, ISpamChecker spamChecker)
+        {
+            var secondSpamCheck = new SpamCheck(member, Message, PostType.Comment, false)
+                {
+                    SpamChecker = spamChecker
+                };
+            return secondSpamCheck.Check();
+        }
+
+      
+
+        public override void Save()
+        {
+            var context = ForumDataContext;
+
+            var isNew = false;
+
+            if (MessageId == 0)
+            {
+                var isSpam = false;
+                var spamServiceEnabled = SpamServiceEnabled;
+
+                if (spamServiceEnabled)
+                {
+                    var member = new Member(this.MemberId);
+
+                    if (member.BozoLevel == 0)
+                    {
+                        var messageLimit = MessageLimit;
+
+                        if (member.TotalForumPosts <= messageLimit)
+                        {
+                            var spamResult = PerformSpamCheck(member, new StopForumSpamChecker());
+
+                            if (!spamResult)
+                            {
+                                isSpam = PerformSpamCheck(member, new AkismetSpamChecker());
+
+                                if (isSpam)
+                                {
+                                    Bozo.BozoFuturePosts(member, "Akismet");
+                                }
+                            }
+                            else
+                            {
+                                Bozo.BozoFuturePosts(member, "StopForumSpam");
+                            }
+                        }
+                    }
+                }
+
+                context.PostMessage(this.ForumId, this.ThreadId, this.Author, this.Message, this.MemberId, false, false,
+                                    false, "");
+
+
+                IncrementMemberStats(context);
+                isNew = true;
+
+                SaveSpamDetails(isSpam);
+            }
+
+            context.SubmitChanges();
+
+            SetSearchIndexingStatus(isNew);
+
+            UpdateMessageCount();
+            
+        }
+
+        private static ForumDataContext ForumDataContext
+        {
+            get
+            {
+                var context = Db.Locator.GetContext<ForumDataContext>();
+                return context;
+            }
+        }
+
+        private void IncrementMemberStats(ForumDataContext context)
+        {
+            MessageId = (from messagesTable in context.ForumMessages
+                              where ThreadId == this.ThreadId
+                              orderby messagesTable.MessageId descending
+                              select messagesTable.MessageId).Take(1).Single();
+
+            context.MemberStatsIncrement(this.MessageId, this.MemberId, "forum");
+        }
+
+        private static int MessageLimit
+        {
+            get
+            {
+                var messageLimit =
+                    Convert.ToInt32(
+                        Kernel.Instance.CurrentWebsite.ModulesByName["site"].ModuleParameters["messagelimit"]);
+                return messageLimit;
+            }
+        }
+
+        private static bool SpamServiceEnabled
+        {
+            get
+            {
+                var spamServiceEnabled =
+                    Convert.ToBoolean(
+                        Kernel.Instance.CurrentWebsite.ModulesByName["site"].ModuleParameters["spamserviceenabled"]);
+                return spamServiceEnabled;
+            }
+        }
+
+        private void UpdateMessageCount()
+        {
+            if (ForumThread == null) return;
+
+            ForumThread.UpdateThreadMessageCount();
+            Site.Article.UpdateAllArticleMessageCounts(this.message.ThreadId);
+        }
+
+        private void SaveSpamDetails(bool isSpam)
+        {
+            if (!isSpam) return;
+
+            var comment = new ForumSpam
+                {
+                    MemberId = MemberId,
+                    SpamType = SpamType.Spam,
+                    ForumMessageId = MessageId,
+                    ForumThreadId = ThreadId,
+                    IsThread = false
+                };
+            comment.Save();
+        }
+
+
+        private void SetSearchIndexingStatus(bool isNewMessage)
+        {
+            Search.Util.SubmitObjectForIndexing(4, 3, MessageId, isNewMessage ? Search.Util.IndexingAction.Add : Search.Util.IndexingAction.Update);
+        }
+
+        public static void Delete(int messageId)
+        {
+            var message = new ForumMessage(messageId);
+
+            using (var conn = Db.Locator.CreateConnection())
+            {
+                int numberOfMessages;
+                using (var cmd = new SqlCommand("delete from forummessages where umn = " + messageId, conn))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+
+                Search.Util.SubmitObjectForIndexing(4,
+                    3,
+                    messageId,
+                    Search.Util.IndexingAction.Delete);
+
+                using (var cmd = new SqlCommand("select count(*) from forummessages where utn = " + message.ThreadId, conn))
+                {
+                    numberOfMessages = (int)cmd.ExecuteScalar();
+                }
+
+                if (numberOfMessages == 0)
+                {
+                    // delete the thread
+                    var thread = new ForumThread(message.ThreadId);
+                    thread.Delete();
+
+                    if (Kernel.Instance.CurrentWebsite.ModulesByName.ContainsKey("listings"))
+                    {
+                        using (var cmd = new SqlCommand("delete from LocalisationFeedItems where ThreadId = " + message.ThreadId, conn))
+                        {
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+                }
+                else
+                {
+                    using (var cmd = new SqlCommand( "update forumthreads set mcount = " + numberOfMessages + " where utn = " + message.ThreadId, conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    using (var cmd = new SqlCommand( "update forumthreads set LastPosted = (SELECT TOP 1 DatePosted FROM ForumMessages WITH (NOLOCK) WHERE UTN = " + message.ThreadId + " AND BozoLevel = 0 ORDER BY UMN DESC) where utn = " + message.ThreadId, conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+                    
+                    using (var cmd = new SqlCommand( "update forumthreads set LastPostedMN = (SELECT TOP 1 MN FROM ForumMessages WITH (NOLOCK) WHERE UTN = " + message.ThreadId + " AND BozoLevel = 0 ORDER BY UMN DESC) where utn = " + message.ThreadId, conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    using ( var cmd = new SqlCommand( "update forumthreads set LastPostedOwner = (SELECT TOP 1 Author FROM ForumMessages WITH (NOLOCK) WHERE UTN = " + message.ThreadId + " AND BozoLevel = 0 ORDER BY UMN DESC) where utn = " + message.ThreadId, conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    using ( var cmd = new SqlCommand( "update forumroot set LastPosted = (SELECT TOP 1 ForumMessages.DatePosted FROM ForumMessages WITH (NOLOCK) WHERE URN = " + message.ForumId + " AND BozoLevel = 0 ORDER BY UMN DESC) where urn = " + message.ForumId, conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    using ( var cmd = new SqlCommand(  "update forumroot set mCount = (SELECT COUNT(UMN) FROM ForumMessages WITH (NOLOCK) WHERE URN = " + message.ForumId + ") where urn = " + message.ForumId, conn))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // a bit dirty
+                    Site.Article.UpdateAllArticleMessageCounts(message.ThreadId);
+                }
+            }
+        }
+
+        public static void UpdateForumMessageSort(int newMessageId, int insertBeforeThisMessageId)
+        {
+            using (var connection = Db.Locator.CreateConnection())
+            {
+                using (var cmd = new SqlCommand(@"
+                    UPDATE Forummessages 
+                    SET InsertBeforeUMNSort = (SELECT UMNSort FROM Forummessages WHERE UMN = @insertBeforeThisMessageId)
+                    WHERE UMN = @newMessageId", connection))
+                {
+                    cmd.Parameters.AddWithValue("@insertBeforeThisMessageId", insertBeforeThisMessageId);
+                    cmd.Parameters.AddWithValue("@newMessageId", newMessageId);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        #region IModuleObject Members
+
+        public Module Module
+        {
+            get { return Kernel.Instance.Modules["forum"]; }
+        }
+
+        public ObjectType ObjectType
+        {
+            get { return this.Module.ObjectTypesById[(int)ForumObjectTypes.Message]; }
+        }
+
+        public int ObjectId
+        {
+            get { return this.MessageId; }
+        }
+
+        public string ObjectName
+        {
+            get { return this.Message; }
+        }
+
+        public Website ObjectWebsite
+        {
+            get
+            {
+                return Kernel.Instance.CurrentWebsite;
+            }
+        }
+
+        public List<string> ObjectTags
+        {
+            get { return null; }
+        }
+
+        public int ObjectMappingFlags
+        {
+            get { return 0; }
+        }
+
+        public int ObjectMicrositeId
+        {
+            get { return 0; }
+        }
+
+        public List<T> FetchObjectsRelatedTo<T>(ObjectType principleObjectType, int principleObjectId, MappingFlags mappingFlags) where T : IModuleObject
+        {
+            throw new NotImplementedException();
+        }
+
+        public List<IModuleObject> ListObjects(bool retrieveObjectNames, int skip, int take)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool DeleteObject(int objectId)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IModuleObject LoadObject(int objectId)
+        {
+            return new ForumMessage(this.MessageId);
+        }
+
+        public string ProvideUri()
+        {
+            return this.ProvideUrl();
+        }
+
+        public string ProvideUrl()
+        {
+            return ForumThread.GenerateForumThreadUrl(this.ThreadId, this.ThreadTitle, Forum.GetForumName(this.ForumId));
+        }
+
+        #endregion
+    }
+}

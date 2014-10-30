@@ -1,0 +1,16 @@
+C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe.config
+C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe
+C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.pdb
+C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.csprojResolveAssemblyReference.cache
+C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.ProjectInstaller.resources
+C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.csproj.GenerateResource.Cache
+C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.exe
+C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.pdb
+C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe.config
+C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.exe
+C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.pdb
+C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe
+C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.pdb
+C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.ProjectInstaller.resources
+C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.csproj.GenerateResource.Cache
+C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.csprojResolveAssemblyReference.cache

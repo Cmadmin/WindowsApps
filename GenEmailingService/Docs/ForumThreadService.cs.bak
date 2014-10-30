@@ -1,0 +1,665 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Web;
+using Immediate.Application.Services.ContentDelivery;
+using Magicalia.MPS.DataModels.Forum;
+using Magicalia.MPS.Infrastructure;
+using Magicalia.MPS.Modules.Forum.Controls;
+using Magicalia.MPS.Modules.Member;
+using Magicalia.MPS.Modules.Site;
+using Magicalia.MPS.Modules.Site.Bozo;
+
+namespace Magicalia.MPS.Modules.Forum.Services
+{
+    public interface IForumThreadService
+    {
+        ThreadPageApplicationModel GetThread(int threadId, int skip, int take, Member.Member viewingMember,
+            ForumThreadMessageOrderBy orderBy);
+
+        List<ThreadPageApplicationModel.Post> GetPosts(int threadId, int skip, int take,
+            ForumThreadMessageOrderBy orderBy, int memberId, int bozoLevel, out long numberOfPostsVisibleToUser);
+
+        List<Thread> GetThreadsForTopic(int topicId, Member.Member member, int skip, int pageSize,
+            ForumThreadDisplayViews display, out long totalRecords);
+
+        List<Thread> GetAllThreads(Member.Member member, int skip, int pageSize, ForumThreadDisplayViews display,
+            out long totalRecords);
+
+        List<Thread> GetThreadsForArea(int areaId, Member.Member member, int skip, int pageSize,
+            ForumThreadDisplayViews display, out long totalRecords);
+
+        int CountThreadMessages(int threadId);
+        ForumMessageData GetThreadData(int threadId);
+
+        void FollowThread(int threadId, int memberId);
+        void UnfollowThread(int threadId, int memberId);
+        void BozoThread(int threadId, int memberId);
+    }
+
+    public enum ForumThreadMessageOrderBy
+    {
+        DateAscending = 1,
+        DateDescending = 2
+    }
+
+    public class ForumThreadService : IForumThreadService
+    {
+        private const int MaxPageSize = 50;
+        private readonly ICdnService _cdnService;
+        private readonly IForumAreaService _forumAreaService;
+
+        private bool _shouldSwapImageForLinks = false;
+        private bool _shouldSwapSmileyImagesForText = false;
+
+        public ForumThreadService(ICdnService cdnService, IForumAreaService forumAreaService)
+        {
+            _cdnService = cdnService;
+            _forumAreaService = forumAreaService;
+        }
+
+
+        public List<Thread> GetThreadsForTopic(int topicId, Member.Member member, int skip, int pageSize,
+            ForumThreadDisplayViews display, out long totalRecords)
+        {
+            if (display == ForumThreadDisplayViews.Normal)
+            {
+                return GetThreads(topicId, member, skip, pageSize, display, out totalRecords);
+            }
+            Forum forum = Forum.GetForumById(topicId);
+            return GetHotThreads(topicId, member, skip, pageSize, display, out totalRecords).Select(x => new Thread
+            {
+                ThreadId = x.ThreadId,
+                Title = x.Title,
+                HeadLine = x.Headline,
+                LastPostedByName = x.LastPostedOwnerName,
+                LastPostedByTime = ForumThreadList.ForumThreadListRepeater.RenderDatePosted(x.LastPostedDate),
+                NumberOfPosts = x.MessageCount,
+                NumberOfViews = x.ThreadViews,
+                LastPostedByUrl = new Member.Member(x.LastPostedMemberId ?? 0).ProvideUri(),
+                ThreadUrl = new ForumThreadUrlBuilder().ProvideThreadUrl(x.ThreadId, forum.Title, x.Title)
+            }).ToList();
+            ;
+        }
+
+        public List<Thread> GetAllThreads(Member.Member member, int skip, int pageSize, ForumThreadDisplayViews display,
+            out long totalRecords)
+        {
+            List<ForumThread> forumThreads = ForumThread.List(0, member, skip, pageSize, display, out totalRecords);
+            return forumThreads.Select(x => new Thread
+            {
+                ThreadId = x.ThreadId,
+                Title = x.Title,
+                HeadLine = x.Headline,
+                LastPostedByName = x.LastPostedOwnerName,
+                LastPostedByTime = ForumThreadList.ForumThreadListRepeater.RenderDatePosted(x.LastPostedDate),
+                NumberOfPosts = x.MessageCount,
+                NumberOfViews = x.ThreadViews,
+                LastPostedByUrl = new Member.Member(x.LastPostedMemberId ?? 0).ProvideUri(),
+                ThreadUrl = x.ProvideUri()
+            }).ToList();
+        }
+
+        public List<Thread> GetThreadsForArea(int areaId, Member.Member member, int skip, int pageSize,
+            ForumThreadDisplayViews display, out long totalRecords)
+        {
+            List<ForumThread> forumThreads = GetAreaThreadsFromDb(areaId, member, skip, pageSize, display,
+                out totalRecords);
+
+            Dictionary<int, string> forumIdsAndTitles =
+                forumThreads.Select(x => x.ForumId)
+                    .Distinct()
+                    .Select(x => new {id = x, title = Forum.GetForumName(x)})
+                    .ToDictionary(o => o.id, o => o.title);
+
+            return forumThreads.Select(x => new Thread
+            {
+                ThreadId = x.ThreadId,
+                Title = x.Title,
+                HeadLine = x.Headline,
+                LastPostedByName = x.LastPostedOwnerName,
+                LastPostedByTime = ForumThreadList.ForumThreadListRepeater.RenderDatePosted(x.LastPostedDate),
+                NumberOfPosts = x.MessageCount,
+                NumberOfViews = x.ThreadViews,
+                LastPostedByUrl = new Member.Member(x.LastPostedMemberId ?? 0).ProvideUri(),
+                ThreadUrl =
+                    new ForumThreadUrlBuilder().ProvideThreadUrl(x.ThreadId, forumIdsAndTitles[x.ForumId], x.Title)
+            }).ToList();
+        }
+
+        public ThreadPageApplicationModel GetThread(int threadId, int skip, int take, Member.Member viewingMember,
+            ForumThreadMessageOrderBy orderBy)
+        {
+            var thread = new ForumThread(threadId);
+            Forum forum = Forum.GetForumById(thread.ForumId);
+
+            int viewingMemberBozoLevel = viewingMember.MemberId == 0 ? 0 : viewingMember.BozoLevel;
+            string viewingMemberNickname = viewingMember.MemberId == 0 ? "" : viewingMember.Nickname;
+            string viewingMemberUrl = viewingMember.MemberId == 0 ? "" : viewingMember.ProvideUri();
+            string viewingMemberImage = viewingMember.MemberId == 0 ? "" : viewingMember.Avatar;
+            bool isFavourite = ForumThread.GetThreadNotification(viewingMember.MemberId, threadId);
+            bool showSimplePostBox = viewingMember.ForumEditorType == MemberForumEditorSetting.PlainText;
+
+            AreaPageViewModel areaModel = _forumAreaService.GetAreaPageViewModel(forum.AreaId);
+            long numberOfPostsVisibleToUser = 0;
+            ThreadPageApplicationModel.Post[] posts =
+                GetPosts(threadId, skip, take, orderBy, viewingMember.MemberId, viewingMemberBozoLevel,
+                    out numberOfPostsVisibleToUser).ToArray();
+
+            var theadPageApplicationModel = new ThreadPageApplicationModel
+            {
+                AreaTitle = areaModel.AreaTitle,
+                AreaUrl = areaModel.AreaUrl,
+                TopicTitle = forum.Title,
+                TopicUrl = forum.ProvideUrl(),
+                ThreadID = threadId,
+                ThreadUrl = ForumThread.GenerateForumThreadUrl(threadId, thread.Title, forum.Title),
+                ThreadTitle = thread.Title,
+                NumberOfViews = (int) thread.ThreadViews,
+                NumberOfPosts = (int) numberOfPostsVisibleToUser,
+                IsFavouriteThread = isFavourite,
+                Posts = posts,
+                IsLockedThread = thread.Locked,
+                IsStickyThread = thread.Sticky,
+                IsUserSubscribedToThread = ForumThread.GetThreadNotification(viewingMember.MemberId, threadId),
+                CurrentUserName = viewingMemberNickname,
+                CurrentUserUserUrl = viewingMemberUrl,
+                CurrentUserImageUrl = viewingMemberImage,
+                ShowSimplePostBox = showSimplePostBox
+            };
+            return theadPageApplicationModel;
+        }
+
+        public List<ThreadPageApplicationModel.Post> GetPosts(int threadId, int skip, int take,
+            ForumThreadMessageOrderBy orderBy, int memberId, int bozoLevel, out long numberOfPostsVisibleToUser)
+        {
+            long totalRecords = 0;
+
+            CheckPageSize(take);
+
+            var posts = new List<ThreadPageApplicationModel.Post>();
+
+            List<ForumMessage> messageList = null;
+
+            if (orderBy == ForumThreadMessageOrderBy.DateDescending)
+            {
+                messageList = ForumMessage.List(threadId, skip, take, out totalRecords, true, memberId, bozoLevel);
+            }
+            else
+            {
+                messageList = ForumMessage.List(threadId, skip, take, out totalRecords, false, memberId, bozoLevel);
+            }
+
+            if (messageList.Count > 0)
+            {
+                Dictionary<int, Like.LikeCount> likeCounts = Like.GetLikeCountForObjects(4, 3,
+                    messageList.Select(x => x.MessageId).ToList(), memberId);
+
+                foreach (ForumMessage post in messageList)
+                {
+                    int likes = 0;
+                    bool canMemberLike = true;
+                    Like.LikeCount temp;
+                    if (likeCounts.TryGetValue(post.MessageId, out temp))
+                    {
+                        likes = temp.TotalLike;
+                        canMemberLike = temp.CanMemberLike;
+                    }
+
+                    var postPoco = new ThreadPageApplicationModel.Post
+                    {
+                        PostID = post.MessageId,
+                        PostHtml = RenderMessage(HttpUtility.HtmlDecode(post.Message)),
+                        PostedByTime =
+                            ForumMessageList.RenderDatePosted(
+                                post.DatePosted),
+                        PostedByName = post.Author,
+                        PostedByUserUrl =
+                            post.Member.ProvideUri(),
+                        PostedByImageUrl = RenderMemberAvatarOrName(memberId, post.Member.Avatar),
+                        PostedByRoles =
+                            post.Member.Roles.AsQueryable()
+                                .Select(x => x.Name.ToLower())
+                                .ToArray(),
+                        NumberOfLikes = likes,
+                        PostedByMessageUserUrl =
+                            "/community/composemessage.aspx?UTN=" + post.ThreadId + "&MemberId=" + post.Member.MemberId,
+                        IsLikedByCurrentUser = memberId != 0 && !canMemberLike,
+                        ReportPostUrl =
+                            "/forum/report.aspx?postid=" +
+                            post.MessageId,
+                        MemberId = post.MemberId
+                    };
+                    posts.Add(postPoco);
+                }
+            }
+
+            numberOfPostsVisibleToUser = totalRecords;
+            return posts;
+        }
+
+        public void FollowThread(int threadId, int memberId)
+        {
+            ForumThread.SubScribeToThread(threadId, memberId);
+            ForumThread.FollowThread(threadId, memberId);
+        }
+
+        public void UnfollowThread(int threadId, int memberId)
+        {
+            ForumThread.UnsubScribeFromThread(threadId, memberId);
+            ForumThread.UnfollowThread(threadId, memberId);
+        }
+
+        public void BozoThread(int threadId, int memberId)
+        {
+            string signedInMember = Member.Member.GetMember(memberId).Nickname;
+            ForumThread thread = ForumThread.GetForumThread(threadId);
+            Member.Member member = Member.Member.GetMember(thread.MemberId);
+            Bozo.BozoAllPostSubmissions(member, signedInMember);
+        }
+
+        public int CountThreadMessages(int threadId)
+        {
+            return ForumMessage.CountThreadMessages(threadId);
+        }
+
+        public ForumMessageData GetThreadData(int threadId)
+        {
+            return ForumMessage.ThreadMessageData(threadId);
+        }
+
+        private List<Thread> GetThreads(int forumId, Member.Member member, int skip, int pageSize,
+            ForumThreadDisplayViews display, out long totalRecords)
+        {
+            List<ForumThread> forumThreads = ForumThread.List(forumId, member, skip, pageSize, display, out totalRecords);
+            Forum forum = Forum.GetForumById(forumId);
+            return forumThreads.Select(x => new Thread
+            {
+                ThreadId = x.ThreadId,
+                Title = x.Title,
+                HeadLine = x.Headline,
+                LastPostedByName = x.LastPostedOwnerName,
+                LastPostedByTime = ForumThreadList.ForumThreadListRepeater.RenderDatePosted(x.LastPostedDate),
+                NumberOfPosts = x.MessageCount,
+                NumberOfViews = x.ThreadViews,
+                LastPostedByUrl = new Member.Member(x.LastPostedMemberId ?? 0).ProvideUri(),
+                ThreadUrl = new ForumThreadUrlBuilder().ProvideThreadUrl(x.ThreadId, forum.Title, x.Title)
+            }).ToList();
+        }
+
+        private List<ForumThread> GetHotThreads(int topicId, Member.Member member, int skip, int take,
+            ForumThreadDisplayViews displayFlag, out long totalRecords)
+        {
+            var threads = new List<ForumThread>();
+
+            long? totalRecordsFromDb = 0;
+            int page = 1;
+            if (skip > 0)
+            {
+                page += skip/take;
+            }
+
+            string forumTitle = string.Empty;
+            List<ForumThreadResult> threadsFromDb = null;
+
+            if (member == null || member.MemberId == 0)
+                threadsFromDb =
+                    Db.Locator.GetContext<ForumDataContext>()
+                        .GetHotThreadsNonMembersByTopic(page, take, topicId, 0, ref totalRecordsFromDb)
+                        .ToList();
+            else if (member.BozoLevel > 0)
+                threadsFromDb =
+                    Db.Locator.GetContext<ForumDataContext>()
+                        .GetHotThreadsForBozosByTopic(page, take, topicId, member.MemberId, ref totalRecordsFromDb)
+                        .ToList();
+            else
+                threadsFromDb =
+                    Db.Locator.GetContext<ForumDataContext>()
+                        .GetHotThreadsForMembersByTopic(page, take, topicId, member.MemberId, ref totalRecordsFromDb)
+                        .ToList();
+
+            if (threadsFromDb != null)
+            {
+                threads.AddRange(threadsFromDb.Select(threadFromDb => new ForumThread
+                {
+                    ThreadId = threadFromDb.ThreadId,
+                    ForumId = threadFromDb.ForumId,
+                    Title = threadFromDb.Title,
+                    FirstMessage = threadFromDb.FirstMessage,
+                    Headline = threadFromDb.Headline,
+                    LastPostedDate = threadFromDb.LastPostedDate,
+                    MessageCount = threadFromDb.MessageCount,
+                    OwnerName = threadFromDb.OwnerName,
+                    Locked = threadFromDb.Locked,
+                    Sticky = threadFromDb.IsSticky,
+                    Hotness = threadFromDb.Hotness,
+                    LastPostedMemberId = threadFromDb.LastPostedMemberId,
+                    LastPostedOwnerName = threadFromDb.LastPostedName,
+                    ThreadViews = threadFromDb.ThreadViews,
+                    HideFromPods = threadFromDb.HideFromPods,
+                    PriorityInPodsUntil = threadFromDb.PriorityInPodsUntil
+                }));
+            }
+
+            totalRecords = totalRecordsFromDb.Value;
+
+            return threads;
+        }
+
+        private List<ForumThread> GetAreaThreadsFromDb(int areaId, Member.Member member, int skip, int take,
+            ForumThreadDisplayViews displayFlag, out long totalRecords)
+        {
+            var threads = new List<ForumThread>();
+
+            long? totalRecordsFromDb = 0;
+            int page = 1;
+            if (skip > 0)
+            {
+                page += skip/take;
+            }
+
+            string forumTitle = string.Empty;
+            List<ForumThreadResult> threadsFromDb = null;
+
+            switch (displayFlag)
+            {
+                case ForumThreadDisplayViews.Normal:
+                    if (member == null || member.MemberId == 0)
+                        threadsFromDb =
+                            Db.Locator.GetContext<ForumDataContext>()
+                                .GetForumThreadsForNonMembersByArea(page, take, areaId, skip, take, 0,
+                                    ref totalRecordsFromDb, ref forumTitle)
+                                .ToList();
+                    else if (member.BozoLevel > 0)
+                        threadsFromDb =
+                            Db.Locator.GetContext<ForumDataContext>()
+                                .GetForumThreadsForBozosByArea(page, take, areaId, skip, take, member.MemberId,
+                                    ref totalRecordsFromDb, ref forumTitle)
+                                .ToList();
+                    else
+                        threadsFromDb =
+                            Db.Locator.GetContext<ForumDataContext>()
+                                .GetForumThreadsForMembersByArea(page, take, areaId, skip, take, member.MemberId,
+                                    ref totalRecordsFromDb, ref forumTitle)
+                                .ToList();
+                    break;
+
+                case ForumThreadDisplayViews.HotThreads:
+                    if (member == null || member.MemberId == 0)
+                        threadsFromDb =
+                            Db.Locator.GetContext<ForumDataContext>()
+                                .GetHotThreadsNonMembersByArea(page, take, areaId, 0, ref totalRecordsFromDb)
+                                .ToList();
+                    else if (member.BozoLevel > 0)
+                        threadsFromDb =
+                            Db.Locator.GetContext<ForumDataContext>()
+                                .GetHotThreadsForBozosByArea(page, take, areaId, member.MemberId, ref totalRecordsFromDb)
+                                .ToList();
+                    else
+                        threadsFromDb =
+                            Db.Locator.GetContext<ForumDataContext>()
+                                .GetHotThreadsForMembersByArea(page, take, areaId, member.MemberId,
+                                    ref totalRecordsFromDb)
+                                .ToList();
+                    break;
+            }
+
+            if (threadsFromDb != null)
+            {
+                threads.AddRange(threadsFromDb.Select(threadFromDb => new ForumThread
+                {
+                    ThreadId = threadFromDb.ThreadId,
+                    ForumId = threadFromDb.ForumId,
+                    Title = threadFromDb.Title,
+                    FirstMessage = threadFromDb.FirstMessage,
+                    Headline = threadFromDb.Headline,
+                    LastPostedDate = threadFromDb.LastPostedDate,
+                    MessageCount = threadFromDb.MessageCount,
+                    OwnerName = threadFromDb.OwnerName,
+                    Locked = threadFromDb.Locked,
+                    Sticky = threadFromDb.IsSticky,
+                    Hotness = threadFromDb.Hotness,
+                    LastPostedMemberId = threadFromDb.LastPostedMemberId,
+                    LastPostedOwnerName = threadFromDb.LastPostedName,
+                    ThreadViews = threadFromDb.ThreadViews,
+                    HideFromPods = threadFromDb.HideFromPods,
+                    PriorityInPodsUntil = threadFromDb.PriorityInPodsUntil
+                }));
+            }
+
+            totalRecords = totalRecordsFromDb.Value;
+
+            return threads;
+        }
+
+        internal string RenderMessage(string message)
+        {
+            message = SwapImagesForTextAndLinks(message);
+            message = ApplyCDN(message);
+            return message.Replace(Environment.NewLine, "<br/>");
+        }
+
+        internal string SwapImagesForTextAndLinks(string message)
+        {
+            if (_shouldSwapSmileyImagesForText)
+            {
+                message = SwapSmileyImagesForText(message);
+            }
+
+            if (_shouldSwapImageForLinks)
+            {
+                message = SwapImagesForLinks(message);
+            }
+            return message;
+        }
+
+        protected internal string RenderMemberAvatarOrName(int memberId, string avatar)
+        {
+            var viewingMember = new Member.Member(memberId);
+            if (!(viewingMember.MemberId > 0 && !viewingMember.ForumShowFaces))
+                return _cdnService.GenerateImagePath(avatar);
+            return String.Empty;
+        }
+
+        internal string SwapImagesForLinks(string renderedMessage)
+        {
+            if (String.IsNullOrEmpty(renderedMessage))
+            {
+                return String.Empty;
+            }
+
+            renderedMessage = ImageReplace1.Replace(renderedMessage, "Image: <a href=\"$1\" target=\"_blank\">$1</a>");
+            renderedMessage = ImageReplace2.Replace(renderedMessage, "Image: <a href=\"$1\" target=\"_blank\">$1</a>");
+            renderedMessage = ImageReplace3.Replace(renderedMessage, "Image: <a href=\"$1\" target=\"_blank\">$1</a>");
+            renderedMessage = ImageReplace4.Replace(renderedMessage, "Image: <a href=\"$1\" target=\"_blank\">$1</a>");
+            renderedMessage = ImageReplace5.Replace(renderedMessage, "Image: <a href=\"$1\" target=\"_blank\">$1</a>");
+            renderedMessage = ImageReplace6.Replace(renderedMessage, "Image: <a href=\"$1\" target=\"_blank\">$1</a>");
+            renderedMessage = ImageReplace7.Replace(renderedMessage, "Image: <a href=\"$1\" target=\"_blank\">$1</a>");
+            renderedMessage = ObjectReplace1.Replace(renderedMessage, "Video: <a href=\"$4\" target=\"_blank\">$4</a>");
+            renderedMessage = ObjectReplace2.Replace(renderedMessage, "Video: <a href=\"$6\" target=\"_blank\">$6</a>");
+
+            return renderedMessage;
+        }
+
+        internal string SwapSmileyImagesForText(string renderedMessage)
+        {
+            if (String.IsNullOrEmpty(renderedMessage))
+            {
+                return String.Empty;
+            }
+
+            // TODO: Check setting for smileys as images or text
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/party_smiley.gif' />", "<:o)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/party_smiley.gif' />", "&lt;:o)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/big_smile_smiley.gif' />", ":D");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/big_smile_smiley.gif' />", ":-D");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/wink_smiley.gif' />", ";)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/wink_smiley.gif' />", ";-)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/sad_smiley.gif' />", ":(");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/sad_smiley.gif' />", ":-(");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/crying_smiley.gif' />", ":')");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/surprised_smiley.gif' />", ":o");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/surprised_smiley.gif' />", ":-o");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/embarassed_smiley.gif' />", ":$");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/embarassed_smiley.gif' />", ":-$");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/confused_smiley.gif' />", ":s");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/confused_smiley.gif' />", ":-s");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/tongue_out_smiley.gif' />", ":p");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/tongue_out_smiley.gif' />", ":-p");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/thinking_smiley.gif' />", "*-)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/i_dont_know_smiley.gif' />", ":^)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/eye_rolling_smiley.gif' />", "8-)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/disappointed_smiley.gif' />", ":|");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/disappointed_smiley.gif' />", ":-|");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/sarcastic_smiley.gif' />", "^o)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/angry_smiley.gif' />", ":@");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/angry_smiley.gif' />", ":-@");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/baring_teeth_smiley.gif' />", "8o|");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/sick_smiley.gif' />", "+o(");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/sleepy_smiley.gif' />", "|-)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/angel_smiley.gif' />", ":a:");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/devil_smiley.gif' />", ":6:");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/dont_tell_anyone_smiley.gif' />", ":-#");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/dont_tell_anyone_smiley.gif' />", ":#");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/secret_smiley.gif' />", ":-*");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/secret_smiley.gif' />", ":*");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/hot_smiley.gif' />", ":h:");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/nerd_smiley.gif' />", "8-|");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/thumbs_up.gif' />", ":y:");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/thumbs_down.gif' />", ":n:");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/heart.gif' />", ":l:");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/broken_heart.gif' />", ":u:");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/light.gif' />", ":i:");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/smile_smiley.gif' />", ":)");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/nerd_smiley.gif' />", "8|");
+            renderedMessage = renderedMessage.Replace("<img src='/forum/smilies/smile_smiley.gif' />", ":-)");
+
+            return renderedMessage;
+        }
+
+        internal string ApplyCDN(string message)
+        {
+            var regex = new Regex(@"<img(.*?)(src=['""](/.*?)['""])(.*?)/?>");
+            foreach (Match match in regex.Matches(message))
+            {
+                string img = match.Groups[0].Value;
+                string src = match.Groups[3].Value;
+                string new_src = AppendHeightAndWidth(src, img);
+                new_src = _cdnService.GenerateImagePath(new_src);
+                new_src += new_src.Contains("height=") && new_src.Contains("width=") ? "&mode=max" : string.Empty;
+                string new_img = img.Replace(src, new_src);
+                message = message.Replace(img, new_img);
+            }
+            return message;
+        }
+
+        internal string AppendHeightAndWidth(string src, string img)
+        {
+            src = AddAttributeToQueryString(src, img, "width");
+            src = AddAttributeToQueryString(src, img, "height");
+            return src;
+        }
+
+        internal string AddAttributeToQueryString(string src, string img, string attribute)
+        {
+            string qs = src.IndexOf('?') > 0 ? src.Substring(src.IndexOf('?')) : string.Empty;
+            Match height = new Regex(attribute + @"=['""](.*?)['""]").Match(img);
+            if (!string.IsNullOrEmpty(height.Groups[1].Value))
+            {
+                src += (!string.IsNullOrEmpty(qs) ? "&" : "?") + string.Format("{0}=", attribute) +
+                       height.Groups[1].Value;
+            }
+            return src;
+        }
+
+        private string RemoveImagesAndObjectTags(string renderedMessage)
+        {
+            if (String.IsNullOrEmpty(renderedMessage))
+            {
+                return String.Empty;
+            }
+
+            renderedMessage = ImageReplace1.Replace(renderedMessage, String.Empty);
+            renderedMessage = ImageReplace2.Replace(renderedMessage, String.Empty);
+            renderedMessage = ImageReplace3.Replace(renderedMessage, String.Empty);
+            renderedMessage = ImageReplace4.Replace(renderedMessage, String.Empty);
+            renderedMessage = ImageReplace6.Replace(renderedMessage, String.Empty);
+            renderedMessage = ImageReplace7.Replace(renderedMessage, String.Empty);
+            renderedMessage = ObjectReplace1.Replace(renderedMessage, String.Empty);
+            renderedMessage = ObjectReplace2.Replace(renderedMessage, String.Empty);
+            renderedMessage = ImageRemove1.Replace(renderedMessage, String.Empty);
+            renderedMessage = ImageRemove2.Replace(renderedMessage, String.Empty);
+            renderedMessage = ObjectReplace1.Replace(renderedMessage, String.Empty);
+            renderedMessage = ObjectReplace2.Replace(renderedMessage, String.Empty);
+
+            return renderedMessage;
+        }
+
+        private void CheckPageSize(int take)
+        {
+            if (take <= 0)
+            {
+                throw new InvalidOperationException("Page size is required");
+            }
+
+            if (take > MaxPageSize)
+            {
+                throw new InvalidOperationException(string.Format("Page size is too large - maximum {0}", MaxPageSize));
+            }
+        }
+
+        #region Regexs
+
+        private static readonly Regex ImageReplace1 =
+            new Regex(
+                "<img src=[\"|']([^']*)[\"|'] alt=[\"|']([^']*)[\"|'] onLoad=[\"|'](.*?)[\"|'] width=[\"|'](.*?)[\"|'] height=[\"|'](.*?)[\"|'] onClick=[\"|'](.*?)[\"|']></img>",
+                RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ImageReplace2 =
+            new Regex(
+                "<img src=[\"|']([^']*)[\"|'] alt=[\"|']([^']*)[\"|'] onLoad=[\"|'](.*?)[\"|'] width=[\"|'](.*?)[\"|'] onClick=[\"|'](.*?)[\"|']></img>",
+                RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ImageReplace3 =
+            new Regex(
+                "<img src=[\"|'](.*?)[\"|'] alt=[\"|'](.*?)[\"|'] onLoad=[\"|'](.*?)[\"|'] width=[\"|'](.*?)[\"|'] height=[\"|'](.*?)[\"|'] onClick=[\"|'](.*?)[\"|']></img>",
+                RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ImageReplace4 =
+            new Regex(
+                "<img src=[\"|'](.*?)[\"|'] alt=[\"|'](.*?)[\"|'] onLoad=[\"|'](.*?)[\"|'] width=[\"|'](.*?)[\"|'] onClick=[\"|'](.*?)[\"|']></img>",
+                RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ImageReplace5 = new Regex("<img src=[\"|'](.*?)[\"|'](.*?)/>",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ImageReplace6 =
+            new Regex(
+                "<img src=[\"|']([^']*)[\"|'] alt=[\"|']([^']*)[\"|'] onLoad=[\"|'](.*?)[\"|'] width=[\"|'](.*?)[\"|'] onClick=[\"|'](.*?)[\"|']></img>",
+                RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ImageReplace7 =
+            new Regex(
+                "<img src=[\"|']([^']*)[\"|'] alt=[\"|']([^']*)[\"|'] onLoad=[\"|'](.*?)[\"|'] height=[\"|'](.*?)[\"|'] onClick=[\"|'](.*?)[\"|']></img>",
+                RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ObjectReplace1 =
+            new Regex(
+                "<object classid=\"clsid:d27cdb6e-ae6d-11cf-96b8-444553540000\" codebase=\"http://download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab#version=6,0,40,0\" width=\"(.*?)\" height=\"(.*?)\">(.*?)<embed type=\"application/x-shockwave-flash\" src=\"(.*?)\" width=\"(.*?)\" height=\"(.*?)\"></embed></object>",
+                RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ObjectReplace2 =
+            new Regex(
+                "<object classid=\"clsid:d27cdb6e-ae6d-11cf-96b8-444553540000\" codebase=\"http://download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab#version=6,0,40,0\" width=\"(.*?)\" height=\"(.*?)\">(.*?)<embed type=\"application/x-shockwave-flash\" width=\"(.*?)\" height=\"(.*?)\" src=\"(.*?)\"></embed></object>",
+                RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ImageRemove1 = new Regex("<img(.*?)</img>",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static readonly Regex ImageRemove2 = new Regex("<img(.*?)/>",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        #endregion
+    }
+}

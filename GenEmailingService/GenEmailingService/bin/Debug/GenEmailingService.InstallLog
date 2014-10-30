@@ -1,0 +1,13 @@
+﻿Installing assembly 'C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe'.
+Affected parameters are:
+   logtoconsole = 
+   logfile = C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.InstallLog
+   assemblypath = C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe
+Installing service GenEmailService...
+Service GenEmailService has been successfully installed.
+Creating EventLog source GenEmailService in log Application...
+Committing assembly 'C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe'.
+Affected parameters are:
+   logtoconsole = 
+   logfile = C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.InstallLog
+   assemblypath = C:\Users\BollaJW6\Desktop\Docs\Tutorials\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe

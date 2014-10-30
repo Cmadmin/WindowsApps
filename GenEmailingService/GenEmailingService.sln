@@ -1,0 +1,26 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2012
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GenEmailingService", "GenEmailingService\GenEmailingService.csproj", "{7DAA8250-56F6-49FF-B886-79E1B5495A4D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GenEmailServiceTest", "ScheduledEmailProcessorTest\GenEmailServiceTest.csproj", "{0079DDF4-80AC-4E4B-AE42-3CC8F425BC5C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7DAA8250-56F6-49FF-B886-79E1B5495A4D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7DAA8250-56F6-49FF-B886-79E1B5495A4D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7DAA8250-56F6-49FF-B886-79E1B5495A4D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7DAA8250-56F6-49FF-B886-79E1B5495A4D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0079DDF4-80AC-4E4B-AE42-3CC8F425BC5C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0079DDF4-80AC-4E4B-AE42-3CC8F425BC5C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0079DDF4-80AC-4E4B-AE42-3CC8F425BC5C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0079DDF4-80AC-4E4B-AE42-3CC8F425BC5C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
