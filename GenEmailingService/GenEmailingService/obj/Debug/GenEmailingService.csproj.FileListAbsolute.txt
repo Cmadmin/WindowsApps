@@ -14,3 +14,10 @@ C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingServi
 C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.ProjectInstaller.resources
 C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.csproj.GenerateResource.Cache
 C:\Projects\Applications\WindowsTimerService\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.csprojResolveAssemblyReference.cache
+C:\Projects\WindowsApps\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe.config
+C:\Projects\WindowsApps\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.exe
+C:\Projects\WindowsApps\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.pdb
+C:\Projects\WindowsApps\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.ProjectInstaller.resources
+C:\Projects\WindowsApps\GenEmailingService\GenEmailingService\obj\Debug\GenEmailingService.csproj.GenerateResource.Cache
+C:\Projects\WindowsApps\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.exe
+C:\Projects\WindowsApps\GenEmailingService\GenEmailingService\bin\Debug\GenEmailingService.pdb

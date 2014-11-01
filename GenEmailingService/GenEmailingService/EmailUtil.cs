@@ -14,10 +14,14 @@ namespace GenEmailingService
     {
         NetworkCredential credentials;
         SmtpClient client;
+        public Dictionary<string, string> toAddresses = new Dictionary<string, string>();
 
-        public string LogFile {
-            get { return string.Format(ConfigurationManager.AppSettings["logfile"], DateTime.Now.Day, 
-                DateTime.Now.Month, DateTime.Now.Year); }
+        public static string LogFile {
+            get { 
+                string path = string.Format(ConfigurationManager.AppSettings["logfile"], DateTime.Now.Day, 
+                DateTime.Now.Month, DateTime.Now.Year);
+                return System.IO.Path.GetFullPath(path);
+            }
         }
 
         public EmailUtil()
@@ -52,5 +56,42 @@ namespace GenEmailingService
                 return false;
             }
         }
+
+        public bool SendMultipleEmail(string fromEmail, string fromName, string subject, string body)
+        {
+            try
+            {
+                MailMessage message = new MailMessage();
+                message.Subject = subject;
+                message.Body = body;
+                message.From = new MailAddress(fromEmail, fromName);
+
+                //add recipients addresses
+                foreach (string key in toAddresses.Keys)
+                {
+                    message.To.Add(new MailAddress(key, toAddresses[key]));
+                }
+
+                message.IsBodyHtml = true;
+                client.UseDefaultCredentials = false;
+                client.Credentials = credentials;
+                client.Send(message);
+                
+                using (StreamWriter sw = File.AppendText(LogFile))
+                {
+                    sw.WriteLine(DateTime.Now.ToString() + " - Mail sent: " + subject);
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                using (StreamWriter sw = File.AppendText(LogFile))
+                {
+                    sw.WriteLine(DateTime.Now.ToString() + " - " + ex.Message);
+                }
+                return false;
+            }
+        }
+
     }
 }

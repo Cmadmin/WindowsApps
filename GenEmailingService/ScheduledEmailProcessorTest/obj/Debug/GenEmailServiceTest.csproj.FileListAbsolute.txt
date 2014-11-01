@@ -6,3 +6,11 @@ C:\Projects\Applications\WindowsTimerService\GenEmailingService\ScheduledEmailPr
 C:\Projects\Applications\WindowsTimerService\GenEmailingService\ScheduledEmailProcessorTest\obj\Debug\GenEmailServiceTest.csprojResolveAssemblyReference.cache
 C:\Projects\Applications\WindowsTimerService\GenEmailingService\ScheduledEmailProcessorTest\obj\Debug\ScheduledEmailProcessorTest.dll
 C:\Projects\Applications\WindowsTimerService\GenEmailingService\ScheduledEmailProcessorTest\obj\Debug\ScheduledEmailProcessorTest.pdb
+C:\Projects\WindowsApps\GenEmailingService\ScheduledEmailProcessorTest\bin\Debug\ScheduledEmailProcessorTest.dll.config
+C:\Projects\WindowsApps\GenEmailingService\ScheduledEmailProcessorTest\bin\Debug\ScheduledEmailProcessorTest.dll
+C:\Projects\WindowsApps\GenEmailingService\ScheduledEmailProcessorTest\bin\Debug\ScheduledEmailProcessorTest.pdb
+C:\Projects\WindowsApps\GenEmailingService\ScheduledEmailProcessorTest\bin\Debug\GenEmailingService.exe
+C:\Projects\WindowsApps\GenEmailingService\ScheduledEmailProcessorTest\bin\Debug\GenEmailingService.pdb
+C:\Projects\WindowsApps\GenEmailingService\ScheduledEmailProcessorTest\obj\Debug\GenEmailServiceTest.csprojResolveAssemblyReference.cache
+C:\Projects\WindowsApps\GenEmailingService\ScheduledEmailProcessorTest\obj\Debug\ScheduledEmailProcessorTest.dll
+C:\Projects\WindowsApps\GenEmailingService\ScheduledEmailProcessorTest\obj\Debug\ScheduledEmailProcessorTest.pdb

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Configuration;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
@@ -13,6 +14,13 @@ namespace TotalHrReminderPreparer
 {
     public partial class Service1 : ServiceBase
     {
+        System.Timers.Timer createOrderTimer;
+
+        public int TimerInterval
+        {
+            get { return Convert.ToInt32(ConfigurationManager.AppSettings["TimerInterval"]); }
+        }
+
         public Service1()
         {
             InitializeComponent();
@@ -20,19 +28,28 @@ namespace TotalHrReminderPreparer
 
         protected override void OnStart(string[] args)
         {
-            //call proc to prepare the reminders
+            createOrderTimer = new System.Timers.Timer();
+            createOrderTimer.Elapsed += new System.Timers.ElapsedEventHandler(PrepareData);
+            createOrderTimer.Interval = TimerInterval;
+            createOrderTimer.Enabled = true;
+            createOrderTimer.AutoReset = true;
+            createOrderTimer.Start();
+        }
+
+        public void PrepareData(object sender, System.Timers.ElapsedEventArgs args)
+        {
+            
             Dictionary<string, string> errors = (new ReminderProcessor()).ProcessAllEvents();
 
             if (errors == null || errors.Keys.Count < 1)
                 return;
 
-            string currentFilePath = string.Format(ReminderProcessor.logFile, DateTime.Now.Day + DateTime.Now.Month + DateTime.Now.Year);
-
-            using (StreamWriter sw = File.AppendText(currentFilePath))
+            
+            using (StreamWriter sw = File.AppendText(ReminderProcessor.logFile))
             {
                 foreach (string key in errors.Keys)
-                {                
-                     sw.WriteLine(errors[key]);                
+                {
+                    sw.WriteLine(DateTime.Now.ToString() + " - " + key + ": " + errors[key]);
                 }
             }
 
@@ -40,6 +57,7 @@ namespace TotalHrReminderPreparer
 
         protected override void OnStop()
         {
+            Utils.DumpContentToFile(ReminderProcessor.logFile, string.Format("Service stopped at {0}", DateTime.Now));
         }
     }
 }

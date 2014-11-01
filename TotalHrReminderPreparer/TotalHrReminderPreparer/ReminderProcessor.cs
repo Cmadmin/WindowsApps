@@ -17,6 +17,14 @@ namespace TotalHrReminderPreparer
         {
             return ConfigurationManager.AppSettings[key];
         }
+
+        public static void DumpContentToFile(string fileName, string content)
+        {
+            using (var file = new System.IO.StreamWriter(fileName))
+            {
+                file.WriteLine(content);
+            }
+        }
     }
 
     public class Result
@@ -28,7 +36,12 @@ namespace TotalHrReminderPreparer
 
     public class ReminderProcessor
     {
-        public const string logFile = @"C:\Projects\Applications\WindowsApps\TotalHrReminderPreparer\logs\Rem_{0}{1}{2}.txt";
+        public static string logFile {
+            get
+            {
+                return string.Format(Utils.GetConfigString("logfile"), DateTime.Now.Day, DateTime.Now.Month, DateTime.Now.Year);
+            }
+        }
 
         public Result RemoveScheduleReminderRequestFromDB(int evtScheduleRequestId)
         {
@@ -66,14 +79,14 @@ namespace TotalHrReminderPreparer
         {
             DataTable allEvents = null;
             Dictionary<string, string> retErrors = new Dictionary<string, string>();
-            string currentFilePath = string.Format(logFile, DateTime.Now.Day , DateTime.Now.Month , DateTime.Now.Year);
+            string currentFilePath = logFile;
 
             try
             {
                 Result result = GetEventToProcess();
 
                 if(result.ReturnId < 0){
-                  retErrors["EventProcessFailed"] = "1";
+                  retErrors["EventProcessFailed"] = "1";   
                     return retErrors;
                 }
 

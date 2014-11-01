@@ -16,10 +16,8 @@ namespace TestTotalHrReminderPreparer
 
             if (errors == null || errors.Keys.Count < 1)
                 return;
-
-            string currentFilePath = string.Format(ReminderProcessor.logFile, DateTime.Now.Day , DateTime.Now.Month , DateTime.Now.Year);
-
-            using (StreamWriter sw = File.AppendText(currentFilePath))
+           
+            using (StreamWriter sw = File.AppendText(ReminderProcessor.logFile))
             {
                 foreach (string key in errors.Keys)
                 {
